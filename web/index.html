@@ -62,7 +62,8 @@
             return text;
         }
 
-        function parseBlock(lines, startIndex) {
+        // Parse a flat block: extracts key="value" attrs, key=[...] arrays, and plain text body
+        function parseFlatBlock(lines, startIndex) {
             var braceCount = 0;
             var content = '';
             var i = startIndex;
@@ -81,10 +82,17 @@
             while ((match = re.exec(content)) !== null) {
                 attrs[match[1]] = match[2];
             }
-            var colsMatch = content.match(/columns\s*=\s*\[([\s\S]*?)\]/);
-            if (colsMatch) {
-                attrs.columns = (colsMatch[1].match(/"([^"]*)"/g) || []).map(function(s) { return s.replace(/"/g, ''); });
+
+            function extractArray(name) {
+                var m = content.match(new RegExp(name + '\\s*=\\s*\\[([\\s\\S]*?)\\]'));
+                if (m) return (m[1].match(/"([^"]*)"/g) || []).map(function(s) { return s.replace(/"/g, ''); });
+                return null;
             }
+            var cols = extractArray('columns');
+            if (cols) attrs.columns = cols;
+            var keywords = extractArray('keywords');
+            if (keywords) attrs.keywords = keywords;
+
             var rowsMatch = content.match(/rows\s*=\s*\[([\s\S]*?)\]\s*\}/);
             if (rowsMatch) {
                 var rowMatches = rowsMatch[1].match(/\[[^\]]+\]/g) || [];
@@ -92,25 +100,119 @@
                     return (row.match(/"([^"]*)"/g) || []).map(function(s) { return s.replace(/"/g, ''); });
                 });
             }
-            var authorsMatch = content.match(/authors\s*=\s*\[([\s\S]*?)\]/);
-            if (authorsMatch) {
-                attrs.authors = (authorsMatch[1].match(/"([^"]*)"/g) || []).map(function(s) { return s.replace(/"/g, ''); });
-            }
-            var keywordsMatch = content.match(/keywords\s*=\s*\[([\s\S]*?)\]/);
-            if (keywordsMatch) {
-                attrs.keywords = (keywordsMatch[1].match(/"([^"]*)"/g) || []).map(function(s) { return s.replace(/"/g, ''); });
-            }
+
             var firstBrace = content.indexOf('{');
             var lastBrace = content.lastIndexOf('}');
             var body = '';
             if (firstBrace >= 0 && lastBrace > firstBrace) {
-                var inner = content.substring(firstBrace + 1, lastBrace);
-                // Remove attribute lines (key = "value" or key = [...])
-                body = inner.split('\n').filter(function(l) {
-                    return !/^\s*\w+\s*=\s*/.test(l);
-                }).join('\n').trim();
+                body = content.substring(firstBrace + 1, lastBrace)
+                    .split('\n')
+                    .filter(function(l) { return !/^\s*\w+\s*=\s*/.test(l); })
+                    .join('\n').trim();
             }
-            return { attrs: attrs, body: body, endIndex: i };
+            return { attrs: attrs, body: body, contentLines: content.split('\n').slice(1, -1), endIndex: i };
+        }
+
+        // Parse a container block that may contain nested @sub-block{...} inside
+        function parseContainerBlock(lines, startIndex) {
+            var braceCount = 0;
+            var content = '';
+            var i = startIndex;
+            for (; i < lines.length; i++) {
+                var line = lines[i];
+                content += line + '\n';
+                for (var j = 0; j < line.length; j++) {
+                    if (line[j] === '{') braceCount++;
+                    if (line[j] === '}') braceCount--;
+                }
+                if (braceCount === 0) break;
+            }
+
+            // Extract top-level attrs: walk lines, skip anything inside @... blocks
+            var contentLines = content.split('\n');
+            var topLines = [];
+            var inSub = false;
+            var subBrace = 0;
+            for (var cl = 0; cl < contentLines.length; cl++) {
+                var cline = contentLines[cl].trim();
+                if (/^@\w+\s*\{/.test(cline) && cl > 0) { inSub = true; subBrace = 1; continue; }
+                if (inSub) {
+                    for (var cj = 0; cj < contentLines[cl].length; cj++) {
+                        if (contentLines[cl][cj] === '{') subBrace++;
+                        if (contentLines[cl][cj] === '}') subBrace--;
+                    }
+                    if (subBrace <= 0) { inSub = false; subBrace = 0; continue; }
+                    continue; // skip lines inside sub-block
+                }
+                topLines.push(cline);
+            }
+            var topText = topLines.join('\n');
+
+            var attrs = {};
+            var match;
+            var re = /(\w+)\s*=\s*"([^"]*)"/g;
+            while ((match = re.exec(topText)) !== null) {
+                attrs[match[1]] = match[2];
+            }
+
+            // Split inner content into lines, strip outer braces
+            var inner = content.substring(content.indexOf('{') + 1, content.lastIndexOf('}'));
+            var innerLines = inner.split('\n');
+
+            // Walk inner lines and collect sub-blocks
+            var subBlocks = []; // [{type: '@author', attrs: ..., body: ...}, ...]
+            var plainLines = [];
+            var si = 0;
+            while (si < innerLines.length) {
+                var sline = innerLines[si].trim();
+                if (sline === '') { plainLines.push(''); si++; continue; }
+
+                var subMatch = sline.match(/^@(\w+)\s*\{/);
+                if (subMatch) {
+                    var subtype = subMatch[1];
+                    var subResult = parseFlatBlock(innerLines, si);
+                    subBlocks.push({ type: subtype, attrs: subResult.attrs, body: subResult.body });
+                    si = subResult.endIndex + 1;
+                    continue;
+                }
+                plainLines.push(innerLines[si]);
+                si++;
+            }
+
+            var plainBody = plainLines.join('\n').trim();
+            return { attrs: attrs, body: plainBody, subBlocks: subBlocks, endIndex: i };
+        }
+
+        // Render functions --------------------------------------------------
+
+        function renderAuthorTag(a, footnotes) {
+            var parts = [escapeHtml(a.name)];
+            var superscripts = '';
+            if (a.note && footnotes) {
+                for (var fni = 0; fni < footnotes.length; fni++) {
+                    if (footnotes[fni].label === a.note) superscripts += '<sup>' + escapeHtml(footnotes[fni].marker) + '</sup>';
+                }
+            }
+            if (a.corresponding && footnotes) {
+                for (var fni = 0; fni < footnotes.length; fni++) {
+                    if (footnotes[fni].label === 'corresponding') superscripts += '<sup>' + escapeHtml(footnotes[fni].marker) + '</sup>';
+                }
+            }
+            parts[0] += superscripts;
+            if (a.affiliation) parts.push('<span class="author-affil">' + escapeHtml(a.affiliation) + '</span>');
+            var emailLink = a.email ? ' <a class="author-email" href="mailto:' + escapeHtml(a.email) + '">✉</a>' : '';
+            return '<span class="author">' + parts.join('<br>') + emailLink + '</span>';
+        }
+
+        function renderHeader(attrs, authors, footnotes) {
+            var title = attrs.title ? '<h1 class="paper-title">' + escapeHtml(attrs.title) + '</h1>\n' : '';
+            var authorHtml = '';
+            if (authors && authors.length) {
+                authorHtml = '<p class="paper-authors">\n' + authors.map(function(a) {
+                    return renderAuthorTag(a, footnotes);
+                }).join('\n') + '\n</p>\n';
+            }
+            return '<header class="paper-header">\n' + title + authorHtml + '</header>\n';
         }
 
         function renderFigure(attrs) {
@@ -146,15 +248,6 @@
             return '<div class="equation"' + id + '>\n\\[' + (attrs.content || '') + '\\]\n</div>\n';
         }
 
-        function renderMeta(attrs) {
-            var title = attrs.title ? '<h1 class="paper-title">' + escapeHtml(attrs.title) + '</h1>\n' : '';
-            var authors = '';
-            if (attrs.authors && attrs.authors.length) {
-                authors = '<p class="paper-authors">' + attrs.authors.map(function(a) { return escapeHtml(a); }).join(', ') + '</p>\n';
-            }
-            return '<header class="paper-header">\n' + title + authors + '</header>\n';
-        }
-
         function renderAbstract(result) {
             var body = result.body || '';
             var html = '<div class="paper-abstract">\n<h3>Abstract</h3>\n<p>' + parseInline(body) + '</p>\n';
@@ -165,13 +258,41 @@
             return html;
         }
 
+        function renderFootnotes(footnotes) {
+            if (!footnotes || !footnotes.length) return '';
+            var html = '<div class="paper-footnotes"><hr>';
+            footnotes.forEach(function(f) {
+                html += '<p class="footnote"><sup>' + escapeHtml(f.marker) + '</sup> ' + parseInline(f.body || '') + '</p>';
+            });
+            html += '</div>';
+            return html;
+        }
+
+        // Main parser -------------------------------------------------------
+
         function parse(input) {
             var lines = input.split('\n');
-            var html = '<article class="paper">\n';
+            var titleAttrs = {};
+            var authorList = [];
+            var footnoteList = [];
+            var html = '';
             var i = 0;
+
             while (i < lines.length) {
                 var line = lines[i].trim();
                 if (line === '') { i++; continue; }
+
+                if (line.startsWith('@title{')) {
+                    var result = parseContainerBlock(lines, i);
+                    titleAttrs = result.attrs;
+                    result.subBlocks.forEach(function(sb) {
+                        if (sb.type === 'author') authorList.push(sb.attrs);
+                        else if (sb.type === 'footnote') footnoteList.push({ marker: sb.attrs.marker, label: sb.attrs.label, body: sb.body });
+                    });
+                    i = result.endIndex + 1;
+                    continue;
+                }
+
                 if (line.startsWith('@section ')) {
                     html += '<h2 class="section-title">' + escapeHtml(line.substring(9).trim()) + '</h2>\n';
                     i++; continue;
@@ -185,31 +306,25 @@
                     i++; continue;
                 }
                 if (line.startsWith('@figure{')) {
-                    var result = parseBlock(lines, i);
+                    var result = parseFlatBlock(lines, i);
                     html += renderFigure(result.attrs);
                     i = result.endIndex + 1;
                     continue;
                 }
                 if (line.startsWith('@table{')) {
-                    var result = parseBlock(lines, i);
+                    var result = parseFlatBlock(lines, i);
                     html += renderTable(result.attrs);
                     i = result.endIndex + 1;
                     continue;
                 }
                 if (line.startsWith('@equation{')) {
-                    var result = parseBlock(lines, i);
+                    var result = parseFlatBlock(lines, i);
                     html += renderEquation(result.attrs);
                     i = result.endIndex + 1;
                     continue;
                 }
-                if (line.startsWith('@meta{')) {
-                    var result = parseBlock(lines, i);
-                    html += renderMeta(result.attrs);
-                    i = result.endIndex + 1;
-                    continue;
-                }
                 if (line.startsWith('@abstract{')) {
-                    var result = parseBlock(lines, i);
+                    var result = parseFlatBlock(lines, i);
                     html += renderAbstract(result);
                     i = result.endIndex + 1;
                     continue;
@@ -221,9 +336,15 @@
                 }
                 i++;
             }
-            html += '</article>\n';
-            return html;
+
+            return '<article class="paper">\n'
+                + renderHeader(titleAttrs, authorList, footnoteList)
+                + html
+                + renderFootnotes(footnoteList)
+                + '</article>\n';
         }
+
+        // Update preview -----------------------------------------------------
 
         function updatePreview() {
             var startTime = performance.now();
@@ -261,7 +382,6 @@
 
         refreshBtn.addEventListener('click', updatePreview);
 
-        // Load demo.pml from file
         fetch('./examples/demo.pml')
             .then(function(r) {
                 if (!r.ok) throw new Error('HTTP ' + r.status);

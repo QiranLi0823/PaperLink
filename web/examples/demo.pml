@@ -1,6 +1,40 @@
-@meta{
+@title{
   title = "A Novel Trajectory Prediction Framework Based on Transformer"
-  authors = ["Author One", "Author Two", "Author Three"]
+
+  @author{
+    name = "Author One"
+    affiliation = "Tsinghua University, Department of Computer Science"
+    email = "author1@tsinghua.edu.cn"
+    orcid = "0000-0001-2345-6789"
+    note = "equal_contribution"
+  }
+
+  @author{
+    name = "Author Two"
+    affiliation = "Peking University, School of Artificial Intelligence"
+    email = "author2@pku.edu.cn"
+    orcid = "0000-0002-3456-7890"
+    note = "equal_contribution"
+  }
+
+  @author{
+    name = "Author Three"
+    affiliation = "Zhejiang University, College of Computer Science"
+    email = "author3@zju.edu.cn"
+    corresponding = "true"
+  }
+
+  @footnote{
+    marker = "†"
+    label = "equal_contribution"
+    These authors contributed equally to this work.
+  }
+
+  @footnote{
+    marker = "*"
+    label = "corresponding"
+    Corresponding author: author3@zju.edu.cn
+  }
 }
 
 @abstract{
