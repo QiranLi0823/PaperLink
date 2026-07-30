@@ -1,0 +1,14 @@
+# Rust
+paper-core/target/
+**/*.rs.bk
+
+# WASM
+web/pkg/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

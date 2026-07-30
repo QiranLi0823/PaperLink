@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paper Studio - Phase 0</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+</head>
+<body>
+    <div class="app">
+        <header class="app-header">
+            <h1>📄 Paper Studio</h1>
+            <span class="version">Phase 0 - Technical Preview</span>
+        </header>
+
+        <main class="container">
+            <div class="editor-pane">
+                <div class="pane-header">
+                    <span class="pane-title">PaperML Editor</span>
+                    <span class="status" id="status">Ready</span>
+                </div>
+                <textarea id="editor" spellcheck="false">@section Introduction
+
+This paper proposes a novel framework for trajectory prediction. According to @cite{vaswani2017attention}, the Transformer architecture has shown remarkable success.
+
+As shown in @ref{fig:framework}, our method consists of three main components.
+
+@figure{
+  path = "figures/framework.png"
+  caption = "Overview of the proposed framework"
+  label = "fig:framework"
+}
+
+@section Method
+
+@subsection Problem Formulation
+
+Given the observed trajectory, we predict future positions using the formula $x_{t+1} = f(x_t, h_t)$.
+
+@equation{
+  content = "\mathcal{L} = \sum_{t=1}^{T} \|\hat{y}_t - y_t\|^2"
+  label = "eq:loss"
+}
+
+@section Experiments
+
+@table{
+  caption = "Comparison with state-of-the-art methods"
+  label = "tab:results"
+  columns = ["Method", "ADE", "FDE"]
+  rows = [
+    ["Social-GAN", "0.81", "1.52"],
+    ["Trajectron++", "0.67", "1.18"],
+    ["Ours", "0.58", "1.02"]
+  ]
+}
+
+As shown in @ref{tab:results}, our method achieves the best performance.
+
+@section Conclusion
+
+We presented a novel approach for trajectory prediction that outperforms existing methods.
+</textarea>
+            </div>
+
+            <div class="preview-pane">
+                <div class="pane-header">
+                    <span class="pane-title">Preview</span>
+                    <button id="refresh-btn" title="Refresh">🔄</button>
+                </div>
+                <div id="preview" class="preview-content">
+                </div>
+            </div>
+        </main>
+
+        <footer class="app-footer">
+            <span id="parse-time"></span>
+        </footer>
+    </div>
+
+    <!-- KaTeX -->
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+
+    <script>
+    // Check if we can access the DOM
+    console.log('Script loaded');
+    console.log('KaTeX available:', typeof katex);
+    console.log('renderMathInElement available:', typeof renderMathInElement);
+
+    window.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM ready');
+
+        var editor = document.getElementById('editor');
+        var preview = document.getElementById('preview');
+        var status = document.getElementById('status');
+        var parseTime = document.getElementById('parse-time');
+        var refreshBtn = document.getElementById('refresh-btn');
+
+        console.log('Elements found:', {
+            editor: !!editor,
+            preview: !!preview,
+            status: !!status,
+            parseTime: !!parseTime
+        });
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function parseInline(text) {
+            text = text.replace(/@cite\{([^}]+)\}/g, '<cite class="citation">[$1]</cite>');
+            text = text.replace(/@ref\{([^}]+)\}/g, '<a href="#$1" class="reference">$1</a>');
+            text = text.replace(/\$([^$]+)\$/g, '\\($1\\)');
+            return text;
+        }
+
+        function parseBlock(lines, startIndex) {
+            var braceCount = 0;
+            var content = '';
+            var i = startIndex;
+            for (; i < lines.length; i++) {
+                var line = lines[i];
+                content += line + '\n';
+                for (var j = 0; j < line.length; j++) {
+                    if (line[j] === '{') braceCount++;
+                    if (line[j] === '}') braceCount--;
+                }
+                if (braceCount === 0) break;
+            }
+            var attrs = {};
+            var match;
+            var re = /(\w+)\s*=\s*"([^"]*)"/g;
+            while ((match = re.exec(content)) !== null) {
+                attrs[match[1]] = match[2];
+            }
+            var colsMatch = content.match(/columns\s*=\s*\[([\s\S]*?)\]/);
+            if (colsMatch) {
+                attrs.columns = (colsMatch[1].match(/"([^"]*)"/g) || []).map(function(s) { return s.replace(/"/g, ''); });
+            }
+            var rowsMatch = content.match(/rows\s*=\s*\[([\s\S]*?)\]\s*\}/);
+            if (rowsMatch) {
+                var rowMatches = rowsMatch[1].match(/\[[^\]]+\]/g) || [];
+                attrs.rows = rowMatches.map(function(row) {
+                    return (row.match(/"([^"]*)"/g) || []).map(function(s) { return s.replace(/"/g, ''); });
+                });
+            }
+            return { attrs: attrs, endIndex: i };
+        }
+
+        function renderFigure(attrs) {
+            var id = attrs.label ? ' id="' + escapeHtml(attrs.label) + '"' : '';
+            var caption = attrs.caption ? '<figcaption>' + escapeHtml(attrs.caption) + '</figcaption>' : '';
+            return '<figure' + id + '>\n  <img src="' + escapeHtml(attrs.path || '') + '" alt="' + escapeHtml(attrs.caption || '') + '" onerror="this.style.display=\'none\'">\n  ' + caption + '\n</figure>\n';
+        }
+
+        function renderTable(attrs) {
+            var id = attrs.label ? ' id="' + escapeHtml(attrs.label) + '"' : '';
+            var caption = attrs.caption ? '<figcaption>' + escapeHtml(attrs.caption) + '</figcaption>' : '';
+            var html = '<figure class="table-container"' + id + '>\n' + caption + '\n<table>\n';
+            if (attrs.columns && attrs.columns.length > 0) {
+                html += '<thead><tr>\n';
+                attrs.columns.forEach(function(c) { html += '<th>' + escapeHtml(c) + '</th>\n'; });
+                html += '</tr></thead>\n';
+            }
+            if (attrs.rows && attrs.rows.length > 0) {
+                html += '<tbody>\n';
+                attrs.rows.forEach(function(row) {
+                    html += '<tr>\n';
+                    row.forEach(function(c) { html += '<td>' + escapeHtml(c) + '</td>\n'; });
+                    html += '</tr>\n';
+                });
+                html += '</tbody>\n';
+            }
+            html += '</table>\n</figure>\n';
+            return html;
+        }
+
+        function renderEquation(attrs) {
+            var id = attrs.label ? ' id="' + escapeHtml(attrs.label) + '"' : '';
+            return '<div class="equation"' + id + '>\n\\[' + (attrs.content || '') + '\\]\n</div>\n';
+        }
+
+        function parse(input) {
+            var lines = input.split('\n');
+            var html = '<article class="paper">\n';
+            var i = 0;
+            while (i < lines.length) {
+                var line = lines[i].trim();
+                if (line === '') { i++; continue; }
+                if (line.startsWith('@section ')) {
+                    html += '<h2 class="section-title">' + escapeHtml(line.substring(9).trim()) + '</h2>\n';
+                    i++; continue;
+                }
+                if (line.startsWith('@subsection ')) {
+                    html += '<h3 class="section-title">' + escapeHtml(line.substring(12).trim()) + '</h3>\n';
+                    i++; continue;
+                }
+                if (line.startsWith('@subsubsection ')) {
+                    html += '<h4 class="section-title">' + escapeHtml(line.substring(15).trim()) + '</h4>\n';
+                    i++; continue;
+                }
+                if (line.startsWith('@figure{')) {
+                    var result = parseBlock(lines, i);
+                    html += renderFigure(result.attrs);
+                    i = result.endIndex + 1;
+                    continue;
+                }
+                if (line.startsWith('@table{')) {
+                    var result = parseBlock(lines, i);
+                    html += renderTable(result.attrs);
+                    i = result.endIndex + 1;
+                    continue;
+                }
+                if (line.startsWith('@equation{')) {
+                    var result = parseBlock(lines, i);
+                    html += renderEquation(result.attrs);
+                    i = result.endIndex + 1;
+                    continue;
+                }
+                if (line.startsWith('@meta{') || line.startsWith('@abstract{')) {
+                    var result = parseBlock(lines, i);
+                    i = result.endIndex + 1;
+                    continue;
+                }
+                if (!line.startsWith('@')) {
+                    html += '<p>' + parseInline(line) + '</p>\n';
+                    i++;
+                    continue;
+                }
+                i++;
+            }
+            html += '</article>\n';
+            return html;
+        }
+
+        function updatePreview() {
+            var startTime = performance.now();
+            try {
+                var html = parse(editor.value);
+                preview.innerHTML = html;
+                console.log('Preview updated, HTML length:', html.length);
+
+                if (typeof renderMathInElement === 'function') {
+                    try {
+                        renderMathInElement(preview, {
+                            delimiters: [
+                                { left: '\\[', right: '\\]', display: true },
+                                { left: '\\(', right: '\\)', display: false },
+                                { left: '$', right: '$', display: false }
+                            ],
+                            throwOnError: false
+                        });
+                    } catch (e) {
+                        console.error('KaTeX error:', e);
+                    }
+                }
+
+                var elapsed = (performance.now() - startTime).toFixed(2);
+                parseTime.textContent = 'Parsed in ' + elapsed + 'ms';
+            } catch (e) {
+                console.error('Parse error:', e);
+                preview.innerHTML = '<div class="error-message">Error: ' + e.message + '</div>';
+            }
+        }
+
+        var debounceTimer = null;
+        editor.addEventListener('input', function() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(updatePreview, 150);
+        });
+
+        refreshBtn.addEventListener('click', updatePreview);
+
+        updatePreview();
+        console.log('Init complete');
+    });
+    </script>
+</body>
+</html>

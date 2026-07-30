@@ -1,0 +1,108 @@
+// PaperML Grammar Definition
+// A markup language for scientific papers
+
+// =============================================================================
+// Document Structure
+// =============================================================================
+
+document = { SOI ~ content* ~ EOI }
+
+content = _{ NEWLINE | block }
+
+block = _{ section | subsection | subsubsection | meta_block | abstract_block | figure | table | equation | paragraph }
+
+// =============================================================================
+// Meta Information
+// =============================================================================
+
+meta_block = { "@meta" ~ WHITESPACE* ~ "{" ~ NEWLINE* ~ meta_attrs ~ "}" }
+meta_attrs = { (meta_attr ~ NEWLINE*)* }
+meta_attr = { (meta_title | meta_authors) }
+meta_title = { "title" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
+meta_authors = { "authors" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ string_array }
+
+abstract_block = { "@abstract" ~ WHITESPACE* ~ "{" ~ NEWLINE* ~ abstract_content ~ "}" }
+abstract_content = { (!("}" ~ NEWLINE) ~ ANY)* }
+
+// =============================================================================
+// Sections
+// =============================================================================
+
+section = { "@section" ~ section_title ~ NEWLINE? }
+subsection = { "@subsection" ~ section_title ~ NEWLINE? }
+subsubsection = { "@subsubsection" ~ section_title ~ NEWLINE? }
+section_title = @{ (!NEWLINE ~ ANY)+ }
+
+// =============================================================================
+// Figures
+// =============================================================================
+
+figure = { "@figure" ~ WHITESPACE* ~ "{" ~ NEWLINE* ~ figure_attrs ~ "}" }
+figure_attrs = { (figure_attr ~ NEWLINE*)* }
+figure_attr = { WHITESPACE* ~ (figure_path | figure_caption | figure_label) ~ WHITESPACE* }
+figure_path = { "path" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
+figure_caption = { "caption" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
+figure_label = { "label" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
+
+// =============================================================================
+// Tables
+// =============================================================================
+
+table = { "@table" ~ WHITESPACE* ~ "{" ~ NEWLINE* ~ table_attrs ~ "}" }
+table_attrs = { (table_attr ~ NEWLINE*)* }
+table_attr = { WHITESPACE* ~ (table_caption | table_label | table_columns | table_rows) ~ WHITESPACE* }
+table_caption = { "caption" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
+table_label = { "label" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
+table_columns = { "columns" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ string_array }
+table_rows = { "rows" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ rows_array }
+
+rows_array = { "[" ~ NEWLINE* ~ (string_array ~ ("," ~ NEWLINE* ~ string_array)*)? ~ NEWLINE* ~ "]" }
+
+// =============================================================================
+// Equations
+// =============================================================================
+
+equation = { "@equation" ~ WHITESPACE* ~ "{" ~ NEWLINE* ~ equation_attrs ~ "}" }
+equation_attrs = { (equation_attr ~ NEWLINE*)* }
+equation_attr = { WHITESPACE* ~ (equation_content | equation_label) ~ WHITESPACE* }
+equation_content = { "content" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
+equation_label = { "label" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
+
+// =============================================================================
+// Paragraphs and Inline Elements
+// =============================================================================
+
+// Paragraph: starts with a non-@ character
+paragraph = { !"@" ~ paragraph_content ~ NEWLINE? }
+paragraph_content = { (inline_element | plain_text)+ }
+
+inline_element = _{ citation | reference | inline_math }
+
+citation = { "@cite" ~ "{" ~ cite_key ~ "}" }
+cite_key = @{ (ASCII_ALPHANUMERIC | "_" | "-" | ":")+ }
+
+reference = { "@ref" ~ "{" ~ ref_target ~ "}" }
+ref_target = @{ (ASCII_ALPHANUMERIC | "_" | "-" | ":")+ }
+
+inline_math = { "$" ~ math_content ~ "$" }
+math_content = @{ (!"$" ~ ANY)+ }
+
+// Plain text: anything that's not inline elements or newline
+plain_text = @{ (!("@cite" | "@ref" | "$" | NEWLINE) ~ ANY)+ }
+
+// =============================================================================
+// Basic Types
+// =============================================================================
+
+quoted_string = ${ "\"" ~ inner_string ~ "\"" }
+inner_string = @{ (!"\"" ~ ANY)* }
+
+string_array = { "[" ~ WHITESPACE* ~ (quoted_string ~ (WHITESPACE* ~ "," ~ WHITESPACE* ~ quoted_string)*)? ~ WHITESPACE* ~ "]" }
+
+// =============================================================================
+// Whitespace and Comments
+// =============================================================================
+
+WHITESPACE = _{ " " | "\t" }
+NEWLINE = _{ "\r\n" | "\n" | "\r" }
+COMMENT = _{ "//" ~ (!NEWLINE ~ ANY)* ~ NEWLINE }
