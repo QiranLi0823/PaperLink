@@ -20,48 +20,7 @@
                     <span class="pane-title">PaperML Editor</span>
                     <span class="status" id="status">Ready</span>
                 </div>
-                <textarea id="editor" spellcheck="false">@section Introduction
-
-This paper proposes a novel framework for trajectory prediction. According to @cite{vaswani2017attention}, the Transformer architecture has shown remarkable success.
-
-As shown in @ref{fig:framework}, our method consists of three main components.
-
-@figure{
-  path = "figures/framework.png"
-  caption = "Overview of the proposed framework"
-  label = "fig:framework"
-}
-
-@section Method
-
-@subsection Problem Formulation
-
-Given the observed trajectory, we predict future positions using the formula $x_{t+1} = f(x_t, h_t)$.
-
-@equation{
-  content = "\mathcal{L} = \sum_{t=1}^{T} \|\hat{y}_t - y_t\|^2"
-  label = "eq:loss"
-}
-
-@section Experiments
-
-@table{
-  caption = "Comparison with state-of-the-art methods"
-  label = "tab:results"
-  columns = ["Method", "ADE", "FDE"]
-  rows = [
-    ["Social-GAN", "0.81", "1.52"],
-    ["Trajectron++", "0.67", "1.18"],
-    ["Ours", "0.58", "1.02"]
-  ]
-}
-
-As shown in @ref{tab:results}, our method achieves the best performance.
-
-@section Conclusion
-
-We presented a novel approach for trajectory prediction that outperforms existing methods.
-</textarea>
+                <textarea id="editor" spellcheck="false"></textarea>
             </div>
 
             <div class="preview-pane">
@@ -70,6 +29,7 @@ We presented a novel approach for trajectory prediction that outperforms existin
                     <button id="refresh-btn" title="Refresh">🔄</button>
                 </div>
                 <div id="preview" class="preview-content">
+                    <p class="loading">Loading demo.pml...</p>
                 </div>
             </div>
         </main>
@@ -84,26 +44,11 @@ We presented a novel approach for trajectory prediction that outperforms existin
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
 
     <script>
-    // Check if we can access the DOM
-    console.log('Script loaded');
-    console.log('KaTeX available:', typeof katex);
-    console.log('renderMathInElement available:', typeof renderMathInElement);
-
     window.addEventListener('DOMContentLoaded', function() {
-        console.log('DOM ready');
-
         var editor = document.getElementById('editor');
         var preview = document.getElementById('preview');
-        var status = document.getElementById('status');
         var parseTime = document.getElementById('parse-time');
         var refreshBtn = document.getElementById('refresh-btn');
-
-        console.log('Elements found:', {
-            editor: !!editor,
-            preview: !!preview,
-            status: !!status,
-            parseTime: !!parseTime
-        });
 
         function escapeHtml(str) {
             if (!str) return '';
@@ -147,7 +92,25 @@ We presented a novel approach for trajectory prediction that outperforms existin
                     return (row.match(/"([^"]*)"/g) || []).map(function(s) { return s.replace(/"/g, ''); });
                 });
             }
-            return { attrs: attrs, endIndex: i };
+            var authorsMatch = content.match(/authors\s*=\s*\[([\s\S]*?)\]/);
+            if (authorsMatch) {
+                attrs.authors = (authorsMatch[1].match(/"([^"]*)"/g) || []).map(function(s) { return s.replace(/"/g, ''); });
+            }
+            var keywordsMatch = content.match(/keywords\s*=\s*\[([\s\S]*?)\]/);
+            if (keywordsMatch) {
+                attrs.keywords = (keywordsMatch[1].match(/"([^"]*)"/g) || []).map(function(s) { return s.replace(/"/g, ''); });
+            }
+            var firstBrace = content.indexOf('{');
+            var lastBrace = content.lastIndexOf('}');
+            var body = '';
+            if (firstBrace >= 0 && lastBrace > firstBrace) {
+                var inner = content.substring(firstBrace + 1, lastBrace);
+                // Remove attribute lines (key = "value" or key = [...])
+                body = inner.split('\n').filter(function(l) {
+                    return !/^\s*\w+\s*=\s*/.test(l);
+                }).join('\n').trim();
+            }
+            return { attrs: attrs, body: body, endIndex: i };
         }
 
         function renderFigure(attrs) {
@@ -181,6 +144,25 @@ We presented a novel approach for trajectory prediction that outperforms existin
         function renderEquation(attrs) {
             var id = attrs.label ? ' id="' + escapeHtml(attrs.label) + '"' : '';
             return '<div class="equation"' + id + '>\n\\[' + (attrs.content || '') + '\\]\n</div>\n';
+        }
+
+        function renderMeta(attrs) {
+            var title = attrs.title ? '<h1 class="paper-title">' + escapeHtml(attrs.title) + '</h1>\n' : '';
+            var authors = '';
+            if (attrs.authors && attrs.authors.length) {
+                authors = '<p class="paper-authors">' + attrs.authors.map(function(a) { return escapeHtml(a); }).join(', ') + '</p>\n';
+            }
+            return '<header class="paper-header">\n' + title + authors + '</header>\n';
+        }
+
+        function renderAbstract(result) {
+            var body = result.body || '';
+            var html = '<div class="paper-abstract">\n<h3>Abstract</h3>\n<p>' + parseInline(body) + '</p>\n';
+            if (result.attrs.keywords && result.attrs.keywords.length) {
+                html += '<p class="paper-keywords"><strong>Keywords:</strong> ' + result.attrs.keywords.map(function(k) { return '<span class="keyword">' + escapeHtml(k) + '</span>'; }).join(', ') + '</p>\n';
+            }
+            html += '</div>\n';
+            return html;
         }
 
         function parse(input) {
@@ -220,8 +202,15 @@ We presented a novel approach for trajectory prediction that outperforms existin
                     i = result.endIndex + 1;
                     continue;
                 }
-                if (line.startsWith('@meta{') || line.startsWith('@abstract{')) {
+                if (line.startsWith('@meta{')) {
                     var result = parseBlock(lines, i);
+                    html += renderMeta(result.attrs);
+                    i = result.endIndex + 1;
+                    continue;
+                }
+                if (line.startsWith('@abstract{')) {
+                    var result = parseBlock(lines, i);
+                    html += renderAbstract(result);
                     i = result.endIndex + 1;
                     continue;
                 }
@@ -238,10 +227,11 @@ We presented a novel approach for trajectory prediction that outperforms existin
 
         function updatePreview() {
             var startTime = performance.now();
+            var content = editor.value;
+            if (!content.trim()) return;
             try {
-                var html = parse(editor.value);
+                var html = parse(content);
                 preview.innerHTML = html;
-                console.log('Preview updated, HTML length:', html.length);
 
                 if (typeof renderMathInElement === 'function') {
                     try {
@@ -253,20 +243,17 @@ We presented a novel approach for trajectory prediction that outperforms existin
                             ],
                             throwOnError: false
                         });
-                    } catch (e) {
-                        console.error('KaTeX error:', e);
-                    }
+                    } catch (e) {}
                 }
 
                 var elapsed = (performance.now() - startTime).toFixed(2);
                 parseTime.textContent = 'Parsed in ' + elapsed + 'ms';
             } catch (e) {
-                console.error('Parse error:', e);
-                preview.innerHTML = '<div class="error-message">Error: ' + e.message + '</div>';
+                preview.innerHTML = '<div class="error-message">Error: ' + escapeHtml(e.message) + '</div>';
             }
         }
 
-        var debounceTimer = null;
+        var debounceTimer;
         editor.addEventListener('input', function() {
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(updatePreview, 150);
@@ -274,8 +261,19 @@ We presented a novel approach for trajectory prediction that outperforms existin
 
         refreshBtn.addEventListener('click', updatePreview);
 
-        updatePreview();
-        console.log('Init complete');
+        // Load demo.pml from file
+        fetch('./examples/demo.pml')
+            .then(function(r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.text();
+            })
+            .then(function(content) {
+                editor.value = content;
+                updatePreview();
+            })
+            .catch(function(err) {
+                preview.innerHTML = '<div class="error-message">Failed to load demo.pml: ' + escapeHtml(err.message) + '</div>';
+            });
     });
     </script>
 </body>

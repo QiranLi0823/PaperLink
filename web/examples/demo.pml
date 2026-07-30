@@ -4,6 +4,7 @@
 }
 
 @abstract{
+  keywords = ["Trajectory Prediction", "Transformer", "Autonomous Driving", "Deep Learning", "Social Attention"]
 Trajectory prediction is a critical component for autonomous driving systems. In this paper, we propose a novel framework that leverages the Transformer architecture for multi-agent trajectory prediction. Our method achieves state-of-the-art performance on the ETH-UCY and nuScenes datasets, demonstrating significant improvements over existing approaches.
 }
 
@@ -49,7 +50,7 @@ Our encoder processes each agent's historical trajectory independently using a T
 We train our model using a combination of regression loss and a diversity loss to encourage multi-modal predictions:
 
 @equation{
-  content = "\\mathcal{L} = \\mathcal{L}_{reg} + \\lambda \\mathcal{L}_{div} = \\min_k \\|\\hat{Y}^k - Y\\|_2^2 + \\lambda \\cdot \\text{Var}(\\{\\hat{Y}^k\\})"
+  content = "\mathcal{L} = \mathcal{L}_{reg} + \lambda \mathcal{L}_{div} = \min_k \|\hat{Y}^k - Y\|_2^2 + \lambda \cdot \text{Var}(\{\hat{Y}^k\})"
   label = "eq:loss"
 }
 
