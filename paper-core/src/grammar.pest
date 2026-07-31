@@ -117,7 +117,13 @@ equation_label = { "label" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
 // Paragraphs and Inline Elements
 // =============================================================================
 
-paragraph = { !"@" ~ paragraph_content ~ NEWLINE? }
+// A paragraph is any line whose first non-space chars are NOT a recognized
+// top-level keyword. We use string-level negations to avoid pest's
+// "lookahead rule" complexity — the list must include every `@xxx` keyword
+// that opens a top-level block (sections, figures, tables, equations,
+// abstract) AND every keyword that only appears nested inside @title.
+// `title_block` itself is covered by "@title".
+paragraph = ${ !("@section" | "@subsection" | "@subsubsection" | "@figure" | "@table" | "@equation" | "@abstract" | "@title" | "@author" | "@footnote") ~ paragraph_content ~ NEWLINE? }
 paragraph_content = { (inline_element | plain_text)+ }
 
 inline_element = _{ citation | reference | inline_math }

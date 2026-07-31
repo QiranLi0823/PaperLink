@@ -570,4 +570,18 @@ mod tests {
             panic!("expected paragraph");
         }
     }
+
+    #[test]
+    fn test_parse_paragraph_starting_with_ref() {
+        // Regression: @ref{...} at the very start of a line should still be parsed
+        // as a paragraph (not rejected as "expected top-level block").
+        let input = "@ref{fig:foo} shows qualitative comparisons.\n";
+        let doc = parse(input).unwrap();
+        assert_eq!(doc.content.len(), 1);
+        if let Block::Paragraph(p) = &doc.content[0] {
+            assert!(p.content.iter().any(|i| matches!(i, Inline::Reference { target } if target == "fig:foo")));
+        } else {
+            panic!("expected paragraph");
+        }
+    }
 }
