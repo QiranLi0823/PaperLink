@@ -7,15 +7,12 @@ use crate::ast::*;
 /// Render a Document to HTML
 pub fn render(doc: &Document) -> String {
     let mut html = String::new();
-
     html.push_str("<article class=\"paper\">\n");
 
-    // Render metadata if present
     if let Some(ref meta) = doc.meta {
         html.push_str(&render_meta(meta));
     }
 
-    // Render content blocks
     for block in &doc.content {
         html.push_str(&render_block(block));
     }
@@ -26,30 +23,77 @@ pub fn render(doc: &Document) -> String {
 
 fn render_meta(meta: &Meta) -> String {
     let mut html = String::new();
-
     html.push_str("<header class=\"paper-header\">\n");
 
     if let Some(ref title) = meta.title {
-        html.push_str(&format!("  <h1 class=\"paper-title\">{}</h1>\n", escape_html(title)));
+        html.push_str(&format!(
+            "  <h1 class=\"paper-title\">{}</h1>\n",
+            escape_html(title)
+        ));
     }
 
+    // Render authors
     if !meta.authors.is_empty() {
         html.push_str("  <div class=\"paper-authors\">\n");
         for author in &meta.authors {
-            html.push_str(&format!("    <span class=\"author\">{}</span>\n", escape_html(author)));
+            html.push_str(&render_author(author, &meta.footnotes));
         }
         html.push_str("  </div>\n");
     }
 
-    if let Some(ref abstract_text) = meta.abstract_text {
-        html.push_str("  <div class=\"paper-abstract\">\n");
-        html.push_str("    <h2>Abstract</h2>\n");
-        html.push_str(&format!("    <p>{}</p>\n", escape_html(abstract_text)));
+    // Render footnotes at the bottom of header
+    if !meta.footnotes.is_empty() {
+        html.push_str("  <div class=\"paper-footnotes\">\n");
+        for footnote in &meta.footnotes {
+            html.push_str(&format!(
+                "    <p class=\"footnote\"><sup>{}</sup> {}</p>\n",
+                escape_html(&footnote.marker),
+                escape_html(footnote.body.as_deref().unwrap_or(""))
+            ));
+        }
         html.push_str("  </div>\n");
     }
 
     html.push_str("</header>\n\n");
     html
+}
+
+fn render_author(author: &Author, footnotes: &[Footnote]) -> String {
+    // Build superscripts for footnotes
+    let mut superscripts = String::new();
+    if let Some(ref note) = author.note {
+        for fn_ in footnotes {
+            if &fn_.label == note {
+                superscripts.push_str(&format!("<sup>{}</sup>", escape_html(&fn_.marker)));
+            }
+        }
+    }
+    if author.corresponding == Some(true) {
+        for fn_ in footnotes {
+            if fn_.label == "corresponding" {
+                superscripts.push_str(&format!("<sup>{}</sup>", escape_html(&fn_.marker)));
+            }
+        }
+    }
+
+    let mut parts: Vec<String> = vec![format!(
+        "{}{}",
+        escape_html(&author.name),
+        superscripts
+    )];
+
+    if let Some(ref aff) = author.affiliation {
+        parts.push(format!("<span class=\"author-affil\">{}</span>", escape_html(aff)));
+    }
+
+    let email_link = author.email.as_ref().map(|e| {
+        format!(" <a class=\"author-email\" href=\"mailto:{}\">✉</a>", escape_html(e))
+    }).unwrap_or_default();
+
+    format!(
+        "    <span class=\"author\">{}</span>\n",
+        parts.join("<br>") + &email_link
+    )
 }
 
 fn render_block(block: &Block) -> String {
@@ -161,7 +205,6 @@ fn render_table(table: &Table) -> String {
 
     html.push_str("  <table>\n");
 
-    // Header row
     if !table.columns.is_empty() {
         html.push_str("    <thead>\n      <tr>\n");
         for col in &table.columns {
@@ -170,7 +213,6 @@ fn render_table(table: &Table) -> String {
         html.push_str("      </tr>\n    </thead>\n");
     }
 
-    // Body rows
     if !table.rows.is_empty() {
         html.push_str("    <tbody>\n");
         for row in &table.rows {
@@ -195,7 +237,7 @@ fn render_equation(eq: &Equation) -> String {
         .unwrap_or_default();
 
     format!(
-        "<div class=\"equation\"{}>\n  \\[{}\\]\n</div>\n",
+        "<div class=\"equation\"{}>\n  \\[{}\\]\\n</div>\\n",
         id_attr,
         escape_html(&eq.content)
     )
@@ -233,5 +275,27 @@ mod tests {
     fn test_escape_html() {
         assert_eq!(escape_html("<script>"), "&lt;script&gt;");
         assert_eq!(escape_html("a & b"), "a &amp; b");
+    }
+
+    #[test]
+    fn test_render_figure() {
+        let mut fig = Figure::new("fig.png");
+        fig.caption = Some("Test".to_string());
+        fig.label = Some("fig:test".to_string());
+        let html = render_figure(&fig);
+        assert!(html.contains("fig.png"));
+        assert!(html.contains("fig:test"));
+    }
+
+    #[test]
+    fn test_render_author() {
+        let mut author = Author::new("Alice");
+        author.affiliation = Some("MIT".to_string());
+        author.corresponding = Some(true);
+        let footnotes = vec![Footnote::new("*", "corresponding")];
+        let html = render_author(&author, &footnotes);
+        assert!(html.contains("Alice"));
+        assert!(html.contains("MIT"));
+        assert!(html.contains("sup>*"));
     }
 }

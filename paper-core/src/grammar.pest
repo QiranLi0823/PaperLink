@@ -9,20 +9,65 @@ document = { SOI ~ content* ~ EOI }
 
 content = _{ NEWLINE | block }
 
-block = _{ section | subsection | subsubsection | meta_block | abstract_block | figure | table | equation | paragraph }
+block = _{ section | subsection | subsubsection | abstract_block | figure | table | equation | paragraph | title_block }
 
 // =============================================================================
-// Meta Information
+// Title Block
 // =============================================================================
 
-meta_block = { "@meta" ~ WHITESPACE* ~ "{" ~ NEWLINE* ~ meta_attrs ~ "}" }
-meta_attrs = { (meta_attr ~ NEWLINE*)* }
-meta_attr = { (meta_title | meta_authors) }
-meta_title = { "title" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
-meta_authors = { "authors" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ string_array }
+title_block = { "@title" ~ "{" ~ NEWLINE* ~ title_content* ~ NEWLINE* ~ "}" }
 
-abstract_block = { "@abstract" ~ WHITESPACE* ~ "{" ~ NEWLINE* ~ abstract_content ~ "}" }
-abstract_content = { (!("}" ~ NEWLINE) ~ ANY)* }
+// title_content: title attr, author blocks, or footnote blocks (with optional leading whitespace)
+title_content = _{ (NEWLINE | WHITESPACE)* ~ (title_attr | author_block | footnote_block) }
+
+title_attr = { !"@" ~ "title" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
+
+// =============================================================================
+// Author Block
+// =============================================================================
+
+author_block = { "@author" ~ "{" ~ NEWLINE* ~ author_inner ~ "}" }
+
+author_inner = { (author_name | author_affiliation | author_email | author_orcid | author_note | author_corresponding | NEWLINE)* }
+
+author_name = { "name" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
+author_affiliation = { "affiliation" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
+author_email = { "email" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
+author_orcid = { "orcid" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
+author_note = { "note" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
+author_corresponding = { "corresponding" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
+
+// =============================================================================
+// Footnote Block
+// =============================================================================
+
+footnote_block = { "@footnote" ~ "{" ~ NEWLINE* ~ footnote_inner ~ "}" }
+
+footnote_inner = {
+    (footnote_marker ~ NEWLINE*)?
+    ~ (footnote_label ~ NEWLINE*)?
+    ~ footnote_body?
+    ~ NEWLINE*
+}
+
+footnote_marker = { "marker" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
+footnote_label = { "label" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
+// footnote_body: matches non-whitespace content only, NOT newlines or closing brace
+footnote_body = { (!(NEWLINE | "}") ~ ANY)+ }
+
+// =============================================================================
+// Abstract Block
+// =============================================================================
+
+abstract_block = { "@abstract" ~ "{" ~ NEWLINE* ~ abstract_inner ~ "}" }
+
+abstract_inner = {
+    (abstract_keywords ~ NEWLINE*)?
+    ~ abstract_content
+}
+
+abstract_keywords = { "keywords" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ string_array }
+abstract_content = { (!"}" ~ ANY)* }
 
 // =============================================================================
 // Sections
@@ -37,9 +82,9 @@ section_title = @{ (!NEWLINE ~ ANY)+ }
 // Figures
 // =============================================================================
 
-figure = { "@figure" ~ WHITESPACE* ~ "{" ~ NEWLINE* ~ figure_attrs ~ "}" }
-figure_attrs = { (figure_attr ~ NEWLINE*)* }
-figure_attr = { WHITESPACE* ~ (figure_path | figure_caption | figure_label) ~ WHITESPACE* }
+figure = { "@figure" ~ "{" ~ NEWLINE* ~ figure_attrs ~ "}" }
+figure_attrs = { (figure_path | figure_caption | figure_label | NEWLINE)* }
+
 figure_path = { "path" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
 figure_caption = { "caption" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
 figure_label = { "label" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
@@ -48,9 +93,9 @@ figure_label = { "label" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
 // Tables
 // =============================================================================
 
-table = { "@table" ~ WHITESPACE* ~ "{" ~ NEWLINE* ~ table_attrs ~ "}" }
-table_attrs = { (table_attr ~ NEWLINE*)* }
-table_attr = { WHITESPACE* ~ (table_caption | table_label | table_columns | table_rows) ~ WHITESPACE* }
+table = { "@table" ~ "{" ~ NEWLINE* ~ table_attrs ~ "}" }
+table_attrs = { (table_caption | table_label | table_columns | table_rows | NEWLINE)* }
+
 table_caption = { "caption" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
 table_label = { "label" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
 table_columns = { "columns" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ string_array }
@@ -62,9 +107,9 @@ rows_array = { "[" ~ NEWLINE* ~ (string_array ~ ("," ~ NEWLINE* ~ string_array)*
 // Equations
 // =============================================================================
 
-equation = { "@equation" ~ WHITESPACE* ~ "{" ~ NEWLINE* ~ equation_attrs ~ "}" }
-equation_attrs = { (equation_attr ~ NEWLINE*)* }
-equation_attr = { WHITESPACE* ~ (equation_content | equation_label) ~ WHITESPACE* }
+equation = { "@equation" ~ "{" ~ NEWLINE* ~ equation_attrs ~ "}" }
+equation_attrs = { (equation_content | equation_label | NEWLINE)* }
+
 equation_content = { "content" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
 equation_label = { "label" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
 
@@ -72,7 +117,6 @@ equation_label = { "label" ~ WHITESPACE* ~ "=" ~ WHITESPACE* ~ quoted_string }
 // Paragraphs and Inline Elements
 // =============================================================================
 
-// Paragraph: starts with a non-@ character
 paragraph = { !"@" ~ paragraph_content ~ NEWLINE? }
 paragraph_content = { (inline_element | plain_text)+ }
 
@@ -87,15 +131,14 @@ ref_target = @{ (ASCII_ALPHANUMERIC | "_" | "-" | ":")+ }
 inline_math = { "$" ~ math_content ~ "$" }
 math_content = @{ (!"$" ~ ANY)+ }
 
-// Plain text: anything that's not inline elements or newline
 plain_text = @{ (!("@cite" | "@ref" | "$" | NEWLINE) ~ ANY)+ }
 
 // =============================================================================
 // Basic Types
 // =============================================================================
 
-quoted_string = ${ "\"" ~ inner_string ~ "\"" }
-inner_string = @{ (!"\"" ~ ANY)* }
+quoted_string = { "\"" ~ inner_string ~ "\"" }
+inner_string = { (!"\"" ~ ANY)* }
 
 string_array = { "[" ~ WHITESPACE* ~ (quoted_string ~ (WHITESPACE* ~ "," ~ WHITESPACE* ~ quoted_string)*)? ~ WHITESPACE* ~ "]" }
 
